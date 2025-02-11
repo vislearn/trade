@@ -1,0 +1,75 @@
+model: trade.BoltzmannGenerator
+
+dataset:
+  training_data_parameters: [600]
+  name: ala2
+  split: [0.8, 0.05, 0.15]
+
+parameter_reference_value: 600.0
+
+max_epochs: 150
+
+flow_type: freia
+
+flow_hparams:
+  n_transforms: 20
+  prior: "normal"
+  augmentation_dim: 60
+  use_actnorm: true
+  scale_latent_with_parameter: true
+  coordinate_transform: constrained
+  parameter_preprocessing: "log"
+  coupling_hparams:
+    coupling_type: "affine"
+    hidden: [[128, 128, 128]]
+    resnet: true
+    parameter_aware: true
+    activation: "silu"
+    volume_preserving: false
+    zero_init: true
+
+lr_scheduler: "onecyclelr"
+
+batch_size: 1024
+optimizer:
+  name: adam
+  lr: 0.0003
+  weight_decay: 1.0e-05
+
+gradient_clip: 3.0
+
+dequantization_noise: 0.0003
+softflow: false
+
+num_workers: 0
+accelerator: "gpu"
+
+kl_loss:
+  adaptive: true
+  adaptive_weight: 1.0
+  alpha_adaptive_update: 0.1
+  clip: 1000000000.0
+  end_value: 1.0
+  log_clip: 1000.0
+  pct_start: 0.0
+  start_value: 0.0
+
+nll_loss:
+    pct_start: 0.0
+    start_value: 1.0
+    adaptive: false
+    adaptive_weight: 1.0
+    log_clip: 1.0e+3
+    clip: 1.0e+9
+
+parameter_prior_hparams:
+  parameters: [0.4, 1.1]
+  s_min: 0.01
+  s_max: 1.5
+  sample_parameter_per_batch: true
+
+plotting:
+  interval: 5
+  n_samples: 100000
+  parameters: [300, 600, 1000]
+  n_repeats_log_prob: 1

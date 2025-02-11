@@ -1,0 +1,15 @@
+trade_loss:
+    pct_start: 0.2
+    start_value: 0.0
+    end_value: 1.0
+    adaptive: true
+    adaptive_weight: 1.e-3
+    log_clip: 1.0e+3
+    clip: 1.0e+9
+    additional_kwargs:
+      mode: continuous
+      check_consistency_with: ground_truth
+      take_samples_from: flow
+      reference_temperature: 1.0
+      evaluation_mode: beta_0_samples_gaussian_noise_parameter_scaling
+      evaluation_stddev: 0.0003

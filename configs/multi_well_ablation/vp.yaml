@@ -1,0 +1,18 @@
+flow_hparams:
+  n_transforms: 25
+  prior: "normal"
+  augmentation_dim: 5
+  use_actnorm: false
+  scale_latent_with_parameter: true
+  coordinate_transform: false
+  parameter_preprocessing: "log"
+  coupling_hparams:
+    coupling_type: "affine"
+    hidden: [256, 256]
+    resnet: false
+    parameter_aware: false
+    activation: "silu"
+    volume_preserving: true
+
+
+optimizer.lr: 0.001

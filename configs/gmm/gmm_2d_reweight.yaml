@@ -1,0 +1,14 @@
+temperature_weighted_loss:
+  pct_start: 0.0
+  start_value: 1.0
+  end_value: 1.0
+  log_clip: 1.0e+3
+  clip: 1.0e+9
+  additional_kwargs:
+    self_supervised: true
+
+parameter_prior_hparams:
+  parameters: [0.4, 1.1]
+  s_min: 0.01
+  s_max: 1.5
+  sample_parameter_per_batch: false

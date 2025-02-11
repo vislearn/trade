@@ -1,0 +1,36 @@
+nll_loss:
+    pct_start: 0.0
+    start_value: 1.0
+    adaptive: true
+    adaptive_weight: 1.0
+    log_clip: 1.0e+9
+    clip: 1.0e+9
+
+trade_loss:
+    pct_start: 0.0
+    start_value: 0.0
+    adaptive: true
+    adaptive_weight: 1.e-3
+    log_clip: 1.0e+3
+    clip: 1.0e+9
+    additional_kwargs:
+      mode: grid
+      check_consistency_with: ground_truth
+      take_samples_from: "flow"
+      epsilon_causality_weight: 0.1
+      n_points_param_grid: 50
+      alpha_running_EX_A: 0.9
+      average_importance_weights: true
+      update_freq_running_average_EX_A: 64
+      alpha_running_loss: 0.9
+      n_samples_expectation_computation: 10000
+      bs_expectation_computation: 10000
+      init_param_grid_in_log_space: true
+      use_target_proposals: false
+
+
+parameter_prior_hparams:
+  parameters: [0.4, 1.1]
+  s_min: 0.01
+  s_max: 1.5
+  sample_parameter_per_batch: true

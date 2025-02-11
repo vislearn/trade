@@ -1,0 +1,99 @@
+model: trade.BoltzmannGenerator
+
+dataset:
+  training_data_parameters: [600]
+  name: ala2
+  split: [0.8, 0.05, 0.15]
+
+parameter_reference_value: 600.0
+
+max_epochs: 60
+
+flow_type: bgflow
+
+flow_hparams:
+  activation: silu
+  architecture:
+  - - TORSIONS
+    - TORSIONS
+    - true
+  - - TORSIONS
+    - TORSIONS
+    - true
+  - - TORSIONS
+    - TORSIONS
+    - true
+  - - ANGLES
+    - TORSIONS
+    - true
+  - - ANGLES
+    - TORSIONS
+    - true
+  - - ANGLES
+    - TORSIONS
+    - true
+  - - BONDS
+    - REMAINING
+    - true
+  - - BONDS
+    - REMAINING
+    - true
+  - - BONDS
+    - REMAINING
+    - true
+  conditioner_type: residual
+  constrain_chirality: false
+  min_energy_structure_path: trade/bgflow_wrapper/data_ala2/position_min_energy.pt
+  n_workers: 16
+  spline_disable_identity_transform: true
+  parameter_aware: true
+  parameter_preprocessing: log
+  temperature_steerable: false
+  torsion_shifts: true
+  use_sobol_prior: false
+
+lr_scheduler: "onecyclelr"
+
+batch_size: 289
+optimizer:
+  name: adam
+  lr: 0.0001
+  weight_decay: 3.7e-06
+
+gradient_clip: 3.0
+
+dequantization_noise: 0.0003
+softflow: false
+
+num_workers: 0
+accelerator: "gpu"
+
+nll_loss:
+    pct_start: 0.0
+    start_value: 1.0
+    adaptive: false
+    adaptive_weight: 1.0
+    log_clip: 1.0e+3
+    clip: 1.0e+9
+
+kl_loss:
+  adaptive: true
+  adaptive_weight: 1.0
+  alpha_adaptive_update: 0.1
+  clip: 1000000000.0
+  end_value: 1.0
+  log_clip: 1000.0
+  pct_start: 0.0
+  start_value: 0.0
+
+parameter_prior_hparams:
+  parameters: [0.4, 1.1]
+  s_min: 0.01
+  s_max: 1.5
+  sample_parameter_per_batch: true
+
+plotting:
+  interval: 5
+  n_samples: 100000
+  parameters: [300, 600, 1000]
+  n_repeats_log_prob: 1

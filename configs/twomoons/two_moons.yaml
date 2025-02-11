@@ -1,0 +1,79 @@
+model: trade.BoltzmannGenerator
+
+dataset:
+  training_data_parameters: [1]
+  name: two_moons
+  split: [0.8, 0.1, 0.1]
+
+target_parameter_name: "likelihood_power"
+
+max_epochs: 20
+
+flow_hparams:
+  n_transforms: 15
+  prior: "normal"
+  augmentation_dim: 0
+  use_actnorm: false
+  scale_latent_with_parameter: false
+  coordinate_transform: false
+  parameter_preprocessing: "log"
+  coupling_hparams:
+    coupling_type: "rqspline"
+    hidden: [128, 128]
+    resnet: false
+    parameter_aware: true
+    activation: "silu"
+    volume_preserving: false
+
+
+lr_scheduler: "onecyclelr"
+
+dequantization_noise: 0.0003
+softflow: false
+
+batch_size: 512
+optimizer:
+  name: adam
+  lr: 0.0004
+  weight_decay: 0.0
+
+gradient_clip: 3.0
+
+num_workers: 0
+accelerator: "gpu"
+
+nll_loss:
+    pct_start: 0.0
+    start_value: 1.0
+    end_value: 1.0
+    log_clip: 1.0e+9
+    clip: 1.0e+9
+
+
+trade_loss:
+    pct_start: 0.2
+    start_value: 0.0
+    end_value: 0.1
+    adaptive: true
+    adaptive_weight: 1.e-3
+    log_clip: 1.0e+3
+    clip: 1.0e+9
+    additional_kwargs:
+      mode: continuous
+      check_consistency_with: self
+      take_samples_from: flow
+      evaluation_mode: beta_0_samples_gaussian_noise_parameter_scaling
+      evaluation_stddev: 0.0003
+      target_parameter_name: "likelihood_power"
+
+parameter_prior_hparams:
+  parameters: [0.4, 2.1]
+  s_min: 0.01
+  s_max: 1.5
+  sample_parameter_per_batch: true
+
+plotting:
+  interval: 3
+  n_samples: 100000
+  parameters: [0.5, 1, 2.0]
+  n_repeats_log_prob: 1

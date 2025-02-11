@@ -1,0 +1,47 @@
+model: trade.BoltzmannGenerator
+
+dataset:
+  training_data_parameters: [1]
+  name: double_well_2d
+  split: [0.8, 0.1, 0.1]
+
+max_epochs: 50
+
+flow_hparams:
+  n_transforms: 15
+  prior: "normal"
+  augmentation_dim: 0
+  use_actnorm: false
+  scale_latent_with_parameter: false
+  coordinate_transform: false
+  parameter_preprocessing: "log"
+  coupling_hparams:
+    coupling_type: "affine"
+    hidden: [128, 128]
+    resnet: false
+    parameter_aware: true
+    activation: "silu"
+    volume_preserving: false
+
+
+lr_scheduler: "onecyclelr"
+
+dequantization_noise: [0.01, 0.00001]
+softflow: true
+
+batch_size: 256
+optimizer:
+  name: adam
+  lr: 0.001
+  weight_decay: 0.0
+
+gradient_clip: 3.0
+
+num_workers: 0
+accelerator: "gpu"
+
+plotting:
+  interval: 5
+  n_samples: 100000
+  parameters: [0.5, 1]
+  n_repeats_log_prob: 1

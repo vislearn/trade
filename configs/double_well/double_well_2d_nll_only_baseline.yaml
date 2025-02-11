@@ -1,0 +1,6 @@
+nll_loss:
+    pct_start: 0.0
+    start_value: 1.0
+    end_value: 1.0
+    log_clip: 1.0e+9
+    clip: 1.0e+9

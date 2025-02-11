@@ -1,0 +1,13 @@
+flow_hparams.scale_latent_with_parameter: true
+flow_hparams.coupling_hparams.parameter_aware: false
+flow_hparams.coupling_hparams.volume_preserving: true
+flow_hparams.augmentation_dim: 2
+
+nll_loss:
+    pct_start: 0.0
+    start_value: 1.0
+    end_value: 1.0
+    log_clip: 1.0e+9
+    clip: 1.0e+9
+
+plotting.n_repeats_log_prob: 30

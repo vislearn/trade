@@ -1,0 +1,13 @@
+torch
+numpy
+bgmol @ git+https://github.com/noegroup/bgmol.git@2be2ede75ce137258fc83c01b28648a8c29161de
+lightning_trainable @ git+https://github.com/LarsKue/lightning-trainable
+pyyaml
+FrEIA @ git+https://github.com/vislearn/FrEIA.git
+matplotlib
+requests
+einops
+optuna
+lightning==2.0.3
+bgflow @ git+https://github.com/RussellALA/bgflow.git
+nflows @ https://github.com/RussellALA/nflows.git

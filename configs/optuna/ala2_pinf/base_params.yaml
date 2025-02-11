@@ -1,0 +1,89 @@
+dataset:
+  training_data_parameter: [600]
+  name: ala2
+  split: [0.8, 0.05, 0.15]
+
+parameter_reference_value: 600
+
+max_epochs: 60
+
+flow_hparams:
+  n_transforms: 25
+  prior: "normal"
+  augmentation_dim: 60
+  use_actnorm: true
+  scale_latent_with_parameter: true
+  coordinate_transform: true
+  parameter_preprocessing: "log"
+  coupling_hparams:
+    coupling_type: "affine"
+    hidden: [[128, 128, 128]]
+    resnet: true
+    parameter_aware: true
+    activation: "silu"
+    volume_preserving: false
+    zero_init: true
+
+lr_scheduler: "onecyclelr"
+
+batch_size: 512
+optimizer:
+  name: adam
+  lr: 0.00045
+  weight_decay: 0.00002
+
+gradient_clip: 3.0
+
+dequantization_noise: 0.0003
+softflow: false
+
+num_workers: 0
+accelerator: "gpu"
+
+nll_loss:
+    pct_start: 0.0
+    start_value: 1.0
+    adaptive: true
+    adaptive_weight: 1.0
+    log_clip: 1.0e+3
+    clip: 1.0e+9
+
+trade_loss:
+    pct_start: 0.2
+    start_value: 0.0
+    adaptive: true
+    adaptive_weight: 1.e-3
+    alpha_adaptive_update: 0.003
+    log_clip: 1.0e+3
+    clip: 1.0e+9
+    additional_kwargs:
+      mode: grid
+      check_consistency_with: ground_truth
+      take_samples_from: flow
+      epsilon_causality_weight: 0.35
+      n_points_param_grid: 15
+      alpha_running_EX_A: 0.5
+      average_importance_weights: true
+      update_freq_running_average_EX_A: 1000
+      alpha_running_loss: 0.8
+      n_samples_expectation_computation: 5000
+      bs_expectation_computation: 5000
+      init_param_grid_in_log_space: true
+      use_target_proposals: false
+      evaluation_mode: beta_0_samples_gaussian_noise_parameter_scaling
+      evaluation_stddev: 0.0003
+      loss_mode: Huber
+      delta_huber: 5.0e-4
+
+
+parameter_prior_hparams:
+  parameters: [0.4, 1.1]
+  s_min: 0.01
+  s_max: 1.5
+  sample_parameter_per_batch: true
+
+plotting:
+  interval: 5
+  n_samples: 100000
+  parameters: [300, 600, 1000]
+  n_repeats_log_prob: 1
