@@ -1,0 +1,11 @@
+**.pyc
+Ala2TSF*.npy
+__pycache__/
+lightning_logs/
+.idea/
+data/
+results
+db.*
+optuna_dbs/
+.ipynb_checkpoints/
+.virtual_documents/
