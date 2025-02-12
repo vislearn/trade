@@ -26,6 +26,13 @@ Fixes for broken packages:
   ```
 - Temperature steerable splines are not provided in the public implementations of bgflow and nflows, we provice forks in requirements.txt with our implementation.
 
+- Currently there exist several bugs in bgflow, which lead to  
+  1. Ignoring the temperature parameter passed to the Boltzmann generator for sampling  
+  2. Making it impossible to evaluate the nll of the Boltzmann generator at a different temperature than 1.0  
+  3. Incorrect computation of the energy for augmented normalizing flows
+
+  When trying to evaluate models trained with bgflow we therefore advise you to implement metrics and sampling functions yourself or directly using the BGFlowFlow class
+
 ### Usage
 Define your configurations in a `config.yaml` file. You can find various default configs in the `configs` folder.
 Then start the experiment using lightning trainable:

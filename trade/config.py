@@ -214,6 +214,7 @@ class BGFlowHParams:
     activation: str = "silu"
     architecture: List[List[str | bool]] = None
     temperature_steerable: bool = False
+    scale_latent_with_parameter: bool = True
 
 @dataclass(kw_only=True)
 class LossHParams:
