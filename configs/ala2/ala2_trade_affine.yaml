@@ -7,7 +7,7 @@ dataset:
 
 parameter_reference_value: 600.0
 
-max_epochs: 20
+max_epochs: 150
 
 flow_type: freia
 
@@ -53,30 +53,20 @@ nll_loss:
     clip: 1.0e+9
 
 trade_loss:
-  alpha_adaptive_update: 0.001031397281068186
-  clip: 1000000000.0
-  end_value: 0.0001
-  log_clip: 1000.0
-  pct_start: 0.0
-  start_value: 0.0001
-  additional_kwargs:  
-      alpha_running_EX_A: 0.95
-      alpha_running_loss: 0.8
-      average_importance_weights: true
-      bs_expectation_computation: 1024
+    pct_start: 0.4
+    start_value: 0.0
+    end_value: 0.1
+    adaptive: true
+    adaptive_weight: 1.e-3
+    log_clip: 1.0e+3
+    clip: 1.0e+9
+    additional_kwargs:
+      mode: continuous
       check_consistency_with: ground_truth
-      delta_huber: 0.0005
-      epsilon_causality_weight: 0.1
+      take_samples_from: flow
       evaluation_mode: beta_0_samples_gaussian_noise_parameter_scaling
       evaluation_stddev: 0.0003
-      init_param_grid_in_log_space: true
-      loss_mode: Huber
-      mode: grid
-      n_points_param_grid: 30
-      n_samples_expectation_computation: 1024
-      take_samples_from: flow
-      update_freq_running_average_EX_A: 100
-      use_target_proposals: true
+
 
 parameter_prior_hparams:
   parameters: [0.4, 1.1]

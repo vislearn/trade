@@ -7,7 +7,7 @@ dataset:
 
 parameter_reference_value: 600.0
 
-max_epochs: 20
+max_epochs: 150
 
 flow_type: freia
 
@@ -34,7 +34,7 @@ batch_size: 1024
 optimizer:
   name: adam
   lr: 0.0003
-  weight_decay: 1.0e-06
+  weight_decay: 1.0e-05
 
 gradient_clip: 3.0
 
