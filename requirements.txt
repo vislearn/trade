@@ -8,6 +8,7 @@ matplotlib
 requests
 einops
 optuna
+seaborn
 lightning==2.0.3
 bgflow @ git+https://github.com/RussellALA/bgflow.git
 nflows @ git+https://github.com/RussellALA/nflows.git
