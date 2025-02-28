@@ -115,7 +115,7 @@ class LegacyCoordinateTransform(Fm.InvertibleModule):
 
 
 class CoordinateTransform(Fm.InvertibleModule):
-    # TODO: Credit this code (original author: Leon Klein, source: bgtorch), ask for permission to publish it
+    # Code adapted from bgtorch, available at https://github.com/noegroup/stochastic_normalizing_flows
     def __init__(self, dims_in, dims_c=None, system=None, coordinates=None, keepdims_rigid=9, keepdims_bonds=6):
         dim_cartesian, dim_bonds, dim_angles, dim_torsions, dim_ics = self.get_dimensions(system, keepdims_rigid, keepdims_bonds)
         super().__init__(dims_in, dims_c)
