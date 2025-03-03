@@ -3,7 +3,7 @@ Ala2TSF*.npy
 __pycache__/
 lightning_logs/
 .idea/
-data/
+/data/
 results
 db.*
 optuna_dbs/

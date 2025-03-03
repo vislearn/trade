@@ -84,6 +84,8 @@ def convert_dict_to_hparams(hparams, dim, dims_c=None):
         hparams.temperature_weighted_loss = LossHParams(**hparams.temperature_weighted_loss)
     if not isinstance(hparams.trade_loss, (LossHParams, type(None))):
         hparams.trade_loss = LossHParams(**hparams.trade_loss)
+    if not isinstance(hparams.var_loss, (LossHParams, type(None))):
+        hparams.var_loss = LossHParams(**hparams.var_loss)
     if not isinstance(hparams.parameter_prior_hparams, ParameterPriorHParams):
         hparams.parameter_prior_hparams = ParameterPriorHParams(**hparams.parameter_prior_hparams)
     if not isinstance(hparams.data_augmentation_hparams, DataAugmentorHParams):
