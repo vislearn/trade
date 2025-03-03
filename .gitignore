@@ -9,3 +9,4 @@ db.*
 optuna_dbs/
 .ipynb_checkpoints/
 .virtual_documents/
+trade.egg-info/

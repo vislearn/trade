@@ -1,0 +1,30 @@
+{
+    "lr":0.00133,
+    "lr_scheduler_config":{
+        "mode":"multiCycle",
+        "lr_decay_factors":[0.5],
+        "epochs_per_cycle":[73,327]
+    },
+    "use_nll_loss":true,
+    "data_free_loss_mode":"reverse_KL",
+    "weight_decay":0.000135,
+    "batch_size_nll":1024,
+    "n_epochs":400,
+    "enable_checkpointing":true,
+    "fixed_relative_weighting":3.847,
+    "regularization_data_free_start":73,
+    "regularization_data_free_full":400,
+    "log_p_target_name":"ScalarTheory",
+    "log_p_target_kwargs":{"lambdas":0.02},
+    "loss_model_params":{
+        "beta_min":0.22,
+        "beta_max":0.32,
+        "bs":2048
+    },
+    "alpha_adaptive_weighting":0.1,
+    "regularization_data_free":1.0,
+    "adaptive_weighting":true,
+    "optimizer_type":"Adam",
+    "random_seed":1001,
+    "gradient_clip_val":16.0
+}

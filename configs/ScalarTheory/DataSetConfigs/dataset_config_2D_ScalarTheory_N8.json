@@ -1,0 +1,13 @@
+{   
+    "data_set_name":"ScalarTheory",
+    "N":8,
+    "init_data_set_params":{
+        "N":8,
+        "kappa_list":[0.25,0.29],
+        "lambda_list":[0.02],
+        "augment":false,
+        "max_samples":100000,
+        "mode":"training",
+        "sigma_noise":0.0
+    }
+}

@@ -1,0 +1,18 @@
+{
+    "run_evaluations":true,
+    "plot_freq":100,
+    "log_scalars_freq":50,
+    "validation_freq":5,
+    "batch_size_validation":500,
+    "log_p_target_name":"2D_GMM",
+    "n_validation_temp_left_right":7,
+    "samples_validation_set":10000,
+    "grid_lim_list":[
+        [-12,12],
+        [-12,12]
+    ],
+    "grid_res_list":[
+        200,
+        200
+    ]
+}

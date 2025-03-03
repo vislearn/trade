@@ -1,0 +1,9 @@
+{   
+    "verbose":true,
+    "sub_config_files":{
+        "config_model":"ModelConfigs/model_config_volume_preserving.json",
+        "config_training":"TrainingSetupConfigs/training_config_volume_preserving.json",
+        "config_evaluation":"EvaluationConfigs/evaluation_config_2D_GMM.json",
+        "config_data":"DataSetConfigs/dataset_config_2D_GMM.json"
+    }
+}

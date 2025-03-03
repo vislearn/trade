@@ -1,7 +1,7 @@
-from temperature_scaling.config import BGFlowHParams
+from trade.config import BGFlowHParams
 import torch
 from typing import Iterable, Tuple, List
-from temperature_scaling.bgflow_wrapper.generators import create_generator
+from trade.bgflow_wrapper.generators import create_generator
 from bgflow import BoltzmannGenerator
 import torch.nn as nn
 from bgflow.utils.types import pack_tensor_in_tuple

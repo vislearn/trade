@@ -1,0 +1,22 @@
+{
+    "log_scalars_freq":25,
+    "kappa_validation_specs":[0.24,0.305,0.01],
+    "lambda_validation_specs":[0.02,0.03,0.02],
+    "plain_samples_validation_set":1000,
+    "batch_size_validation":512,
+    "validation_freq":5,
+    "plot_freq":20,
+    "run_evaluations":true,
+    "plot_states":false,
+    "n_samples_plot_per_kappa":5,
+    "kappa_physics_specs":[0.22,0.33,0.005],
+    "lambda_physics_specs":[0.02,0.03,0.02],
+    "n_samples_physics":10000,
+    "batch_size_physics":1000,
+    "y_lims":[
+        [0.0,4.0],
+        [-5,1.2],
+        [-0.5,15],
+        [-0.1,0.9]
+    ]
+}

@@ -1,0 +1,10 @@
+{   
+    "loss_mode":"NLL",
+    "verbose":true,
+    "sub_config_files":{
+        "config_model":"ModelConfigs/model_config_2D_ScalarTheory_N8.json",
+        "config_training":"TrainingConfigs/training_config_2D_ScalarTheory_N8_NLL.json",
+        "config_evaluation":"EvaluationConfigs/evaluation_config_2D_ScalarTheory_N8.json",
+        "config_data":"DataSetConfigs/dataset_config_2D_ScalarTheory_N8.json"
+    }
+}

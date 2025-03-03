@@ -1,0 +1,28 @@
+{
+    "lr":0.0005,
+    "lr_scheduler_config":{
+        "mode":"oneCycle"
+    },
+    "use_nll_loss":false,
+    "data_free_loss_mode":"reverse_KL",
+    "weight_decay":0.0002,
+    "batch_size_nll":1024,
+    "n_epochs":400,
+    "enable_checkpointing":true,
+    "regularization_data_free_start":0,
+    "regularization_data_free_full":400,
+    "symmetry_in_get_evaluation_points":null,
+    "log_p_target_name":"ScalarTheory",
+    "log_p_target_kwargs":{"lambdas":0.02},
+    "loss_model_params":{
+        "beta_min":0.22,
+        "beta_max":0.32,
+        "bs":1024
+    },
+    "regularization_data_free":1.0,
+    "adaptive_weighting":null,
+    "optimizer_type":"Adam",
+    "random_seed":0,
+    "gradient_clip_val":41,
+    "fixed_relative_weighting":null
+}

@@ -6,6 +6,15 @@ from typing import Callable, Dict, Any
 from functools import partial
 from tqdm.auto import tqdm
 from math import ceil
+from typing import Tuple
+
+from trade.models import INN_Model
+
+from trade.datasets import (
+    log_p_target_dict,
+    S_dict,
+    dS_dparam_dict
+)
 
 class ModelDistribution(Distribution):
     def __init__(self, flow, condition_sampler, parameter=1.0, n_repeats=1):
@@ -995,3 +1004,1211 @@ class TRADE_loss_grid(TRADE_loss_base):
             self.iteration += 1
 
         return super().__call__(flow, **kwargs)
+
+##############################################################################################
+# Interface to initialize the data free loss functions
+##############################################################################################
+
+class DataFreeLossFactory():
+    def __init__(self):
+        pass
+
+    def create(self,key,config):
+
+        #Check consistency
+        assert(key == config["config_training"]["data_free_loss_mode"])
+
+        if key == "reverse_KL":
+            loss_model = Objective_reverse_KL(
+                log_p_target=log_p_target_dict[config["config_training"]["log_p_target_name"]],
+                log_p_target_kwargs=config["config_training"]["log_p_target_kwargs"],
+                device = config["device"],
+                **config["config_training"]["loss_model_params"]
+            )
+            print("Initialize loss model of type <Objective_reverse_KL>")
+
+        elif key == "PINF_local_Ground_Truth_one_param_V2":
+            loss_model = Objective_PINF_local_Ground_Truth_one_param_V2(
+                S = S_dict[config["config_data"]["data_set_name"]],
+                dSdparam = dS_dparam_dict[config["config_data"]["data_set_name"]],
+                device = config["device"],
+                **config["config_training"]["loss_model_params"]               
+            )
+            print("Initialize loss model of type <Objective_PINF_local_Ground_Truth_one_param_V2>")
+
+        elif key == "PINF_parallel_Ground_Truth_one_param_V2":
+
+            loss_model = Objective_PINF_parallel_Ground_Truth_one_param_V2(
+                S = S_dict[config["config_data"]["data_set_name"]],
+                dSdparam = dS_dparam_dict[config["config_data"]["data_set_name"]],
+                device = config["device"],
+                **config["config_training"]["loss_model_params"]
+            )
+
+            print("Initialize loss model of type <Objective_PINF_parallel_Ground_Truth_one_param_V2>")
+        
+        elif key == "PINF_parallel_Ground_Truth_one_param":
+
+            loss_model = Objective_PINF_parallel_Ground_Truth_one_param(
+                S = S_dict[config["config_data"]["data_set_name"]],
+                dSdparam = dS_dparam_dict[config["config_data"]["data_set_name"]],
+                device = config["device"],
+                **config["config_training"]["loss_model_params"]
+            )
+
+            print("Initialize loss model of type <Objective_PINF_parallel_Ground_Truth_one_param>")           
+        
+        else: 
+            loss_model = None
+            print("No data free loss model is used")
+
+        return loss_model
+
+##############################################################################################
+# Utils for loss computation
+##############################################################################################
+
+def get_beta(t:int,t_burn_in:int,t_full:int,beta_star:float,beta_min:float,beta_max:float,**kwargs)->Tuple[float,float,float]:
+        """
+        Sample the inverse temperature from an interval depending on the current time step
+
+        parameters:
+            t:              The current time step
+            t_burn_in:      The lenght of the burin in phase
+            t_full:         The number of time steps it takes to reach the full range
+            beta_star:      The inverse base temperature
+            beta_min:       The minimal inverse temperature
+            beta_max:       The maximal inverse temperature
+
+        returns:
+            beta:           The sampled inverse temperature
+            left:           The lower boundary of the interval from which the inverse temperature is sampled
+            right:          The upper boundary of the interval from which the inverse temperature is sampled
+        """
+
+        assert(isinstance(beta_star,float))
+        assert(isinstance(beta_min,float))
+        assert(isinstance(beta_max,float))
+        assert(t_burn_in <= t_full)
+        assert(beta_star >= beta_min)
+        assert(beta_star <= beta_max)
+        assert(beta_star > 0.0)
+        assert(beta_max > 0.0)
+        assert(beta_min > 0.0)
+
+        #Burn in Phase return the inverse base temperature
+        if t < t_burn_in:
+            beta = beta_star
+            left = beta_star
+            right = beta_star
+
+        #Randomly sample the inverse temperature from the interval
+        else:
+            
+            #Compute the linear interpolation factor
+            #use full range from the begining or directly after the burn in phase
+            if (t_full == 0) or (t_full == t_burn_in): l = 1.0
+            
+            #There is a finite ramp up phase
+            else:
+                l = (min(t,t_full)-t_burn_in) / (t_full-t_burn_in)
+
+            #Sample the inverse temperature uniformly from the interval [beta_star - l * beta_min, beta_star + l * beta_max]
+            if kwargs["mode"] == "linear":
+
+                left = beta_star - (beta_star -beta_min) * l
+                right = beta_star + (beta_max -beta_star) * l
+
+                beta = (right - left) * torch.rand(1).item() + left
+
+            #Sample the logarithm of the inverse temperature uniformly from the interval [log(beta_star) - l * log(beta_min), log(beta_star) + l * log(beta_max)]
+            elif kwargs["mode"] == "log-linear":
+
+                beta_min_log = np.log(beta_min)
+                beta_max_log = np.log(beta_max)
+                beta_0_log = np.log(beta_star)
+
+                log_left = beta_0_log - (beta_0_log - beta_min_log) * l
+                log_right = beta_0_log + (beta_max_log - beta_0_log) * l
+
+                log_beta_t = (log_right - log_left) * torch.rand(1).item() + log_left
+
+                beta = np.exp(log_beta_t)
+                left = np.exp(log_left)
+                right = np.exp(log_right)
+
+            else:
+                raise ValueError("Sampling mode for inverse temperature not recognized")
+            
+        return beta,left,right
+
+def get_loss_from_residuals(residuals:torch.Tensor,dim:int = 0,weight_tensor:torch.tensor = None,**kwargs) -> torch.Tensor:
+    """
+    Compute the loss from the residuals
+
+    parameters:
+        residuals:      One dimensional tensor containing the residuals
+        kwargs:         Additional parameters for the loss computation, must contain the key "mode" which specifies the loss function used to compute the loss
+        weight_tensor:  Weights for each loss contributions.
+
+    returns:
+        loss:       The loss
+    """
+
+    #Mean squared error
+    if kwargs["mode"] == "MSE":
+        loss = residuals.pow(2)
+
+    #Mean absolute error
+    elif kwargs["mode"] == "MAE":
+        loss = residuals.abs()
+
+    #Huber loss
+    elif kwargs["mode"] == "Huber":
+        loss = huber_loss(residuals,delta = kwargs["delta"])
+    
+    else:
+        raise ValueError("Loss computation mode not recognized")
+    
+    if weight_tensor is None:
+        return loss.mean(dim = dim)
+
+    else:
+        assert(loss.shape == weight_tensor.shape)
+
+        return (loss * weight_tensor).mean(dim = dim)
+
+def huber_loss(x:torch.Tensor,delta:float) -> torch.Tensor:
+    """
+    Compute the Huber loss
+
+    parameters:
+        x       The residuals
+        delta   The threshold for the Huber loss
+
+    returns:
+        h: The Huber loss
+    """
+
+    assert(isinstance(delta,float))
+
+    h = torch.where(x.abs() < delta,0.5 * x.pow(2),delta * (x.abs() - 0.5 * delta))
+    
+    return h
+
+##############################################################################################
+# Grid-based TRADE
+##############################################################################################
+
+class Objective_PINF_parallel_Ground_Truth_one_param():
+    def __init__(self,
+                 param_min:float,
+                 param_max:float,
+                 S:Callable,
+                 S_kwargs:Dict,
+                 dSdparam:Callable,
+                 dSdparam_kwargs:Dict,
+                 n_reps:int,
+                 base_params:torch.tensor,
+                 device:str,
+                 epsilon_causality_weight:float,
+                 n_points_param_grid:int,
+                 residual_processing_parameters:Dict,
+                 alpha_running_EX_A:float,
+                 average_importance_weights:bool,
+                 update_freq_running_average_EX_A:int,
+                 bs:int,
+                 alpha_running_loss:float,
+                 n_samples_expectation_computation:int,
+                 bs_expectation_computation:int,
+                 init_param_grid_in_log_space:bool,
+                 n_epochs:int,
+                 n_batches_per_epoch:int,
+                 epsilon_causality_decay_factor:float,
+                 epsilon_reduction_factor_inbetween:float
+                 )->None:
+
+        """
+        parameters:
+            param_min:                          The minimal parameter value
+            param_max:                          The maximal parameter value
+            S:                                  The ground truth function in the exponent of the Gibbs distribution
+            S_kwargs:                           Additional parameters for the ground truth energy function
+            dSdparam:                           The derivative of the ground truth function with respect to the parameter
+            dSdparam_kwargs:                    Additional parameters for the derivative of the ground truth energy function
+            n_reps:                             The number of repetitions for the loss computation
+            base_params:                        The base parameters at which the nll loss is computed
+            device:                             The device on which the computation is performed
+            residual_processing_parameters:     Parametersto compute the loss from the residuals
+            bs:                                 The batch size for the computation of the loss
+            epsilon_causality_weight:           The weight of the causality term in the loss
+            n_points_param_grid:int,            The number of points in the parameter grid
+            alpha_running_EX_A:                 The running average parameter for the expectation value of the derivate of the ground truth energy function with respect to the parameter
+            average_importance_weights:         If True, the importance weights are averaged if they are inbetween of two base parameters
+            update_freq_running_average_EX_A:   The frequency with which the running average of the expectation value is updated
+            alpha_running_loss:                 The running average parameter for the loss
+            n_samples_expectation_computation:  The number of samples used to compute the expectation values
+            bs_expectation_computation:         The batch size for the computation of the expectation values
+            init_param_grid_in_log_space:       If True, the parameter grid is initialized in log space
+            n_epochs:                           Number of epochs for which this loss is applied
+            n_batches_per_epoch:                Number of optimization steps per epoch
+            epsilon_causality_decay_factor:     Final ratio of epsilon at the end of the training
+            epsilon_reduction_factor_inbetween: Factor by which epsilon is changed inbetween two base parameters
+        """
+
+        print("*********************************************************************************************")
+        print("Use class 'Objective_PINF_parallel_Ground_Truth_one_param'")
+        print("*********************************************************************************************")
+
+
+        T = n_epochs * n_batches_per_epoch
+        self.tau_cw = - np.log(epsilon_causality_decay_factor) / T
+
+        #Store settings
+        self.device = device
+        self.bs = bs
+        self.residual_processing_parameters = residual_processing_parameters
+
+        self.S = S
+        self.dSdparam = dSdparam
+        self.S_kwargs = S_kwargs
+        self.dSdparam_kwargs = dSdparam_kwargs
+        self.n_reps = n_reps
+        self.epsilon_causality_weight = epsilon_causality_weight
+
+        self.update_freq_running_average_EX_A = update_freq_running_average_EX_A
+        self.n_samples_expectation_computation = n_samples_expectation_computation
+        self.bs_expectation_computation = bs_expectation_computation
+
+        #Set the parameter grid
+        if init_param_grid_in_log_space:
+            log_param_grid = torch.linspace(np.log(param_min),np.log(param_max),n_points_param_grid).reshape(-1,1)
+            self.param_grid = torch.exp(log_param_grid)
+        
+        else:
+            self.param_grid = torch.linspace(param_min,param_max,n_points_param_grid).reshape(-1,1)
+
+        self.param_grid = torch.cat((base_params.reshape(-1,1),self.param_grid),0)
+
+        #remove duplicates
+        unique_elements = torch.unique(self.param_grid)
+        self.param_grid = unique_elements.reshape(-1,1)
+
+        #Ensure, that the parameters are sorted in ascending order
+        self.param_grid,_ = torch.sort(self.param_grid,dim = 0)
+
+        #Get the indices of the base parameters
+        self.n_points_param_grid = n_points_param_grid
+        self.base_params = base_params
+
+        #Intialize the running average stores for the expectation values
+        self.EX_A = None
+        self.alpha_running_EX_A = alpha_running_EX_A
+        self.average_importance_weights = average_importance_weights
+
+        #Counter for the number of calls of the loss function
+        self.iteration = 0
+
+        assert(self.alpha_running_EX_A >= 0.0)
+        assert(self.alpha_running_EX_A <= 1.0)
+        assert(self.epsilon_causality_weight >= 0.0)
+        #assert(self.param_grid.shape == torch.Size([len(base_params)+n_points_param_grid,1]))
+
+        #Statistics for the loss in the individual bins
+        self.loss_statistics = torch.zeros(len(self.param_grid))
+        self.alpha_running_loss = alpha_running_loss
+        self.freq_update_causality_weights = 50
+        self.log_causality_weights = None
+
+        #########
+        self.multiplyer = torch.ones_like(self.param_grid)
+        
+        for i,param in enumerate(self.param_grid):
+
+            #Check if it is inbetween to of the base parameters
+            mask_1 = (param < self.base_params).sum().item()
+            mask_2 = (param > self.base_params).sum().item()
+
+            flag = mask_1 * mask_2
+
+            if flag == 1:
+                self.multiplyer[i] = epsilon_reduction_factor_inbetween
+
+    def get_loss(self,INN:INN_Model,get_eval_points:Callable)->torch.Tensor:
+
+        """
+        This loss uses the stored expectation values for the derivative of the ground truth energy function with respect to the parameter to compute the loss. To do this, sampels are randomly drawn 
+        from a discrete distribution defined by the causality weights which are based on the running averages of the loss on the individual parameter grid points. The expectation of the derivative of 
+        the ground truth energy function with respect to the parameter is not updated in this method. However, the running averages of the loss are updated.
+
+        parameters:
+            INN:                The INN model
+            get_eval_points:    Function to get evaluation points for the gradient evaluation. Takes arguments beta_tensor.
+
+        returns:
+            loss:               The temperature scaling loss at the given inverse temperature
+        """
+
+        #############################################################################################################
+        #1) Get randomly select a batch of parameters for the evaluation
+        #############################################################################################################
+
+        #Initial call: Uniformly sample the points
+        if self.log_causality_weights is None:
+            print("Initial call")
+            idx = torch.randint(low = 0,high = len(self.param_grid),size = (self.bs,))
+
+        #Follow up calls: Sample the indices based on the distribution defined by the causality weights 
+        else:
+            m = torch.distributions.categorical.Categorical(logits = self.log_causality_weights)
+            idx = m.sample([self.bs]).cpu()
+        
+        assert(idx.shape == torch.Size([self.bs]))
+
+        param_tensor = self.param_grid[idx].to(self.device)
+        assert(param_tensor.shape == torch.Size([self.bs,1]))
+
+        #############################################################################################################
+        #2) Compute the target for the logarithm of the INN distribution
+        #############################################################################################################
+        with torch.no_grad():
+
+            INN.train(False)
+
+            #2a) Get evaluation points at which the loss is evaluated
+            x_eval = get_eval_points(beta_tensor = param_tensor)
+
+            #2b) Compute the ground truth energies of the evaluation points
+            A_eval = self.dSdparam(x_eval,**self.dSdparam_kwargs).reshape(-1,1)
+            assert(A_eval.shape == param_tensor.shape)
+
+            #2c) Compute the target
+            target = (self.EX_A[idx] - A_eval).detach()
+            assert(self.EX_A[idx].shape == torch.Size([self.bs,1]))
+            assert(target.shape == torch.Size([self.bs,1]))
+
+            INN.train(True)
+
+        #############################################################################################################
+        #3) Compute the gradient of the INN ditsribution with respect to the parameter
+        #############################################################################################################
+        param_tensor.requires_grad_(True)
+
+        #3a) Compute the log likelihood of the evaluation points under the INN distribution
+        log_p_x_eval = INN.log_prob(x_eval,param_tensor)
+
+        #3b) Compute the gradient of the log likelihood of the evaluation points under the INN distribution with respect to the parameter
+        grad = torch.autograd.grad(log_p_x_eval.sum(),param_tensor,create_graph=True)[0]
+        assert(grad.shape == param_tensor.shape)
+        assert(grad.shape == target.shape)
+
+        #############################################################################################################
+        #4)Compute loss for each of the evaluation points
+        #############################################################################################################
+        
+        #4a) Get the residuals
+        residuals = grad - target.detach()
+        assert(residuals.shape == param_tensor.shape)
+
+        #4b) Compute the loss based on the residuals
+        loss = get_loss_from_residuals(residuals,dim = 1,**self.residual_processing_parameters)
+        assert(loss.shape == torch.Size([param_tensor.shape[0]]))
+
+        #############################################################################################################
+        #5) Update the running averages of the loss on the evaluated grid points
+        #############################################################################################################
+
+        #5a) Average the losses if there are multiple samples for the same parameter
+        unique_idx,position_uniques,counts_uniques = torch.unique(idx,return_counts = True,return_inverse = True)
+
+        target_tensor_loss = torch.zeros(unique_idx.shape[0])
+        target_tensor_loss.scatter_add_(0, position_uniques, loss.cpu().detach()) / counts_uniques
+        target_tensor_loss = target_tensor_loss / counts_uniques
+
+        #5b) Compute weights depending on the number of samples for the same parameter
+        alphas_reweighted = self.alpha_running_loss**counts_uniques  
+
+        #5c) Compute running average
+        assert(self.loss_statistics[unique_idx].shape == target_tensor_loss.shape)
+        assert(self.loss_statistics[unique_idx].shape == alphas_reweighted.shape)
+
+        w_old = alphas_reweighted
+        w_new = 1.0 - w_old
+
+        assert(w_old.shape == alphas_reweighted.shape)
+        assert(w_new.shape == w_old.shape)
+
+        self.loss_statistics[unique_idx.cpu()] = w_old * self.loss_statistics[unique_idx] + w_new * target_tensor_loss.cpu()
+        assert(self.loss_statistics.shape == torch.Size([len(self.param_grid)]))
+
+        #############################################################################################################
+        #6) If applicable, update the logarithms of the causality weights
+        #############################################################################################################
+        if (self.log_causality_weights is None) or ((self.iteration % self.freq_update_causality_weights) == 0):
+            self.log_causality_weights = self.compute_causality_weights_exponents(self.loss_statistics.detach(),self.param_grid)
+
+        #############################################################################################################
+        #7) Aggregate the loss
+        #############################################################################################################
+        loss = loss.mean()
+        assert(loss.shape == torch.Size([]))
+
+        return loss
+    
+    def compute_causality_weights_exponents(self,loss:torch.tensor,param_tensor:torch.tensor)->torch.tensor:
+        '''
+
+        Compute the logarithms of the causality weights for the individual losses.
+
+        Parameters:
+            loss:               Tensor of shape [K] contaiing the loss values at the evaluated parameter values
+            param_tensor:       Tensor of shape [K,self.bs] containing the parameter values at which the loss is evaluated. has to be sorted in ascending order
+
+        returns:
+            causality_weights:  Tensor of shape [K] containing the logarithms of the causality weights for the individual losses
+        
+        '''
+
+        assert(len(loss.shape) == 1)
+        assert(len(param_tensor.shape) == 2)
+        assert(loss.shape[0] == param_tensor.shape[0])
+
+        #Compute the epsilon used for the causality weights
+        self.epsilon_t = self.epsilon_causality_weight * np.exp(- self.tau_cw * (self.iteration - self.iter_start))
+
+        with torch.no_grad():
+            causality_weights = torch.zeros(param_tensor.shape[0]).to(self.device)
+
+            for i in range(len(param_tensor)):
+
+                param_i = param_tensor[i][0]
+
+                #get the index of the closest base parameter
+                a = torch.argmin((self.base_params.cpu().detach() - param_i.cpu().detach()).abs()).item()
+                param_base = self.base_params[a]
+
+                idx_base = torch.where(param_tensor[:,0] == param_base)[0].item()
+                idx_parameter = i
+
+                #Get the second closest base parameter
+                if len(self.base_params) > 1:
+                    mask = self.base_params != param_base
+                    base_params_masked = self.base_params[mask]
+
+                    b = torch.argmin((base_params_masked.cpu().detach() - param_i.cpu().detach()).abs()).item()
+                    param_base_second = base_params_masked[b]
+                    idx_base_second = torch.where(param_tensor[:,0] == param_base_second)[0].item()
+
+                #Get the loss weights based on the closest base parameter
+                if idx_base < idx_parameter:
+                    s1 = loss[idx_base:idx_parameter]
+
+                elif idx_base > idx_parameter:
+                    s1 = loss[idx_parameter+1:idx_base+1]
+
+                else:
+                    s1 = torch.zeros(1).to(self.device)
+
+                exponent_closest = (-s1.sum() * self.epsilon_t).detach()
+
+                if len(self.base_params) > 1:
+                    #If applicable, get the loss weights based on the second closest base parameter, i.e. if the sample is between two base parameters
+                    is_between = (param_base < param_i < param_base_second) or (param_base > param_i > param_base_second)
+
+                    if is_between and self.average_importance_weights:
+                        #Get the loss weights based on the closest base parameter
+                        if idx_base_second < idx_parameter:
+                            s2 = loss[idx_base_second:idx_parameter]
+
+                            d_base_idx = idx_parameter - (idx_base_second + 1)
+
+                        elif idx_base_second > idx_parameter:
+                            s2 = loss[idx_parameter+1:idx_base_second+1]
+
+                            d_base_idx = idx_base_second - 1 - idx_parameter
+
+                        else:
+                            raise ValueError("Not suported case for causality weights")
+
+                        exponent_second = (-s2.sum() * self.epsilon_t).detach()
+
+                        #Get the relative weigting based on the distance to the base temperature
+                        d_base_base = abs(idx_base_second - idx_base) - 2
+                        assert(d_base_base >= 0)
+                        assert(d_base_idx >= 0)
+                        assert(d_base_base >= d_base_idx)
+
+                        k = d_base_idx / d_base_base
+
+                        #Catch edge cases where the weights ignore one of the two contributions
+                        if k == 1.0:
+                            exponent = exponent_closest
+                        
+                        elif k == 0.0:
+                            exponent = exponent_second
+                        
+                        else:
+                            exponent = torch.logsumexp(torch.tensor([exponent_closest + np.log(k),exponent_second + np.log(1-k)]),0)
+
+                        assert(exponent.shape == torch.Size([]))
+
+                    else:
+                        exponent = exponent_closest
+
+                else:
+                    exponent = exponent_closest
+                
+                causality_weights[i] = exponent
+
+            causality_weights = causality_weights.detach()
+
+            ###
+            assert(causality_weights.shape == self.multiplyer.squeeze().shape)
+            causality_weights = causality_weights * self.multiplyer.squeeze().to(causality_weights.device)
+
+            return causality_weights
+    
+    def get_expectation_values(self,INN:INN_Model,n_samples:int)->torch.tensor:
+        """
+        Compute the expectation values of the derivative of the ground truth energy function with respect to the parameter at the parameter grid points
+
+        parameters:
+            INN:                The INN model
+            n_samples:          The number of samples used to compute the expectation values
+
+        returns:
+            EX_A_temporaray:    The approximated expectation values of the derivative of the ground truth energy function with respect to the parameter at the parameter grid points
+        """
+
+        INN.train(False)
+        
+
+        with torch.no_grad():
+
+            EX_A_temporaray = torch.zeros(len(self.param_grid),1).to(self.device)
+            n_batches = int(self.n_samples_expectation_computation / self.bs_expectation_computation)
+
+            for i in tqdm(range(len(self.param_grid))):
+
+                param = self.param_grid[i]
+
+                log_p_x_proposal_INN = torch.zeros(self.bs_expectation_computation * n_batches).to(self.device)
+                log_p_x_proposal_GT = torch.zeros(self.bs_expectation_computation* n_batches).to(self.device)
+                A_proposal = torch.zeros(self.bs_expectation_computation* n_batches).to(self.device)
+
+                for j in range(n_batches):
+
+                    #1) Get samples from the INN
+                    x_proposal_i = INN.sample(n_samples = self.bs_expectation_computation,beta_tensor = param.item())
+
+                    #2) Compute the derivative of the ground truth energy function with respect to the parameter at the evaluation points
+                    A_proposal_i = self.dSdparam(x_proposal_i,**self.dSdparam_kwargs)
+                    assert(A_proposal_i.shape == torch.Size([self.bs_expectation_computation]))
+
+                    #3) Compute the log likelihood of the samples under the INN distribution and the ground truth distribution
+                    log_p_x_proposal_INN_i    = INN.log_prob(x_proposal_i,param.item())
+                    log_p_x_proposal_GT_i     = - self.S(x_proposal_i,param.item(),**self.S_kwargs)
+
+                    assert(log_p_x_proposal_GT_i.shape == torch.Size([self.bs_expectation_computation]))
+                    assert(log_p_x_proposal_INN_i.shape == torch.Size([self.bs_expectation_computation]))
+
+                    log_p_x_proposal_GT[j*self.bs_expectation_computation:(j+1)*self.bs_expectation_computation] = log_p_x_proposal_GT_i
+                    log_p_x_proposal_INN[j*self.bs_expectation_computation:(j+1)*self.bs_expectation_computation] = log_p_x_proposal_INN_i
+                    A_proposal[j*self.bs_expectation_computation:(j+1)*self.bs_expectation_computation] = A_proposal_i
+
+                assert(log_p_x_proposal_INN.shape == log_p_x_proposal_GT.shape)
+                assert(log_p_x_proposal_INN.shape == torch.Size([n_samples]))
+
+                #4) compute the log likelihood ratios
+                log_w = log_p_x_proposal_GT - log_p_x_proposal_INN
+                assert(log_w.shape == torch.Size([n_samples]))
+
+                #5) compute the log parition function
+                log_Z = torch.logsumexp(log_w,dim = 0) - np.log(n_samples)
+                assert(log_Z.shape == torch.Size([]))
+
+                #6) Compute the importance weights
+                log_omega = log_w - log_Z
+                assert(log_omega.shape == A_proposal.shape)
+
+                #7) Compute the sample based expectation value of the energy
+                EX_A_temporaray[i] = (A_proposal * log_omega.exp()).mean().item()
+                
+            assert(EX_A_temporaray.shape == torch.Size([len(self.param_grid),1]))
+    
+            INN.train(True)
+
+            return EX_A_temporaray
+        
+    def __call__(self,INN,epoch,get_eval_points,logger = None)->torch.Tensor:
+        """
+        Compute the TS-PINF loss
+
+        parameters:
+            INN:                The INN model
+            epoch:              The current epoch
+            get_eval_points:    Function to get evaluation points for the gradient evaluation. Takes arguments beta_tensor
+            logger:             The logger for the loss
+
+        returns:
+            loss:               The temperature scaling loss
+        """
+
+        #############################################################################################################
+        #Update the running average store for the expectation values
+        #############################################################################################################
+
+        #Initialize the running average store for the expectation values at the first call
+        if self.EX_A is None:
+
+            self.iter_start = self.iteration
+
+            print("Initialize running average store for expectation values")
+            self.EX_A =  self.get_expectation_values(INN = INN,n_samples = self.n_samples_expectation_computation)
+            print("done")
+
+        #Update the running average store for the expectation values
+        elif (self.iteration - self.iter_start) % self.update_freq_running_average_EX_A == 0:
+            print("Update running average store for expectation values")
+            update_EX_A = self.get_expectation_values(INN = INN,n_samples = self.n_samples_expectation_computation)
+            self.EX_A = self.alpha_running_EX_A * self.EX_A + (1.0 - self.alpha_running_EX_A) * update_EX_A
+
+        #############################################################################################################
+        #Compute the loss
+        #############################################################################################################
+            
+        #Count the number of evaluations
+        counter = 0
+        loss = torch.zeros(1).to(self.device)
+
+        for i in range(self.n_reps):
+
+            loss_i = self.get_loss(INN = INN,get_eval_points = get_eval_points)
+            loss = loss + loss_i
+            counter += 1
+
+        loss = loss / counter
+
+        logger.experiment.add_scalar(f"metadata/loss_model_internal_iteratoins",self.iteration,self.iteration)
+        logger.experiment.add_scalar(f"parameters/epsilon_causality_weight",self.epsilon_t,self.iteration)
+
+        return loss
+
+class Objective_PINF_parallel_Ground_Truth_one_param_V2(Objective_PINF_parallel_Ground_Truth_one_param):
+    """
+    Basically teh same as the default implementation, but the distance between the grid points is now considered in the computation of the causality weights.
+    """
+
+    def compute_causality_weights_exponents(self,loss:torch.tensor,param_tensor:torch.tensor)->torch.tensor:
+        '''
+
+        Compute the logarithms of the causality weights for the individual losses.
+
+        Parameters:
+            loss:               Tensor of shape [K] contaiing the loss values at the evaluated parameter values
+            param_tensor:       Tensor of shape [K,self.bs] containing the parameter values at which the loss is evaluated. has to be sorted in ascending order
+
+        returns:
+            causality_weights:  Tensor of shape [K] containing the logarithms of the causality weights for the individual losses
+        '''
+
+        assert(len(loss.shape) == 1)
+        assert(len(param_tensor.shape) == 2)
+        assert(loss.shape[0] == param_tensor.shape[0])
+
+        #Compute the epsilon used for the causality weights
+        self.epsilon_t = self.epsilon_causality_weight * np.exp(- self.tau_cw * (self.iteration - self.iter_start))
+
+        with torch.no_grad():
+            causality_weights = torch.zeros(param_tensor.shape[0]).to(self.device)
+
+            for i in range(len(param_tensor)):
+
+                param_i = param_tensor[i][0]
+
+                #get the index of the closest base parameter
+                a = torch.argmin((self.base_params.cpu().detach() - param_i.cpu().detach()).abs()).item()
+                param_base = self.base_params[a]
+
+                idx_base = torch.where(param_tensor[:,0] == param_base)[0].item()
+                idx_parameter = i
+
+                #Get the second closest base parameter
+                if len(self.base_params) > 1:
+                    mask = self.base_params != param_base
+                    base_params_masked = self.base_params[mask]
+
+                    b = torch.argmin((base_params_masked.cpu().detach() - param_i.cpu().detach()).abs()).item()
+                    param_base_second = base_params_masked[b]
+                    idx_base_second = torch.where(param_tensor[:,0] == param_base_second)[0].item()
+
+                #Get the loss weights based on the closest base parameter
+                if idx_base < idx_parameter:
+                    s1 = loss[idx_base:idx_parameter]
+                    grid_distances1 = torch.abs(self.param_grid.squeeze()[idx_base+1:idx_parameter+1] - self.param_grid.squeeze()[idx_base:idx_parameter])
+
+                elif idx_base > idx_parameter:
+                    s1 = loss[idx_parameter+1:idx_base+1]
+                    grid_distances1 = torch.abs(self.param_grid.squeeze()[idx_parameter:idx_base] - self.param_grid.squeeze()[idx_parameter+1:idx_base+1])
+
+                else:
+                    s1 = torch.zeros(1).to(self.device)
+                    grid_distances1 = torch.zeros(1).to(self.device)
+
+                assert(s1.shape == grid_distances1.shape)
+                s1 = s1 * grid_distances1
+
+                exponent_closest = (-s1.sum() * self.epsilon_t).detach()
+
+                if len(self.base_params) > 1:
+                    #If applicable, get the loss weights based on the second closest base parameter, i.e. if the sample is between two base parameters
+                    is_between = (param_base < param_i < param_base_second) or (param_base > param_i > param_base_second)
+
+                    if is_between and self.average_importance_weights:
+                        #Get the loss weights based on the closest base parameter
+                        if idx_base_second < idx_parameter:
+                            s2 = loss[idx_base_second:idx_parameter]
+                            grid_distances2 = torch.abs(self.param_grid.squeeze()[idx_base_second+1:idx_parameter+1] - self.param_grid.squeeze()[idx_base_second:idx_parameter])
+
+                            d_base_idx = idx_parameter - (idx_base_second + 1)
+
+                        elif idx_base_second > idx_parameter:
+                            s2 = loss[idx_parameter+1:idx_base_second+1]
+                            grid_distances2 = torch.abs(self.param_grid.squeeze()[idx_parameter:idx_base_second] - self.param_grid.squeeze()[idx_parameter+1:idx_base_second+1])
+
+                            d_base_idx = idx_base_second - 1 - idx_parameter
+
+                        else:
+                            raise ValueError("Not suported case for causality weights")
+                        
+                        assert(s2.shape == grid_distances2.shape)
+                        s2 = s2 * grid_distances2
+
+                        exponent_second = (-s2.sum() * self.epsilon_t).detach()
+
+                        #Get the relative weigting based on the distance to the base temperature
+                        d_base_base = abs(idx_base_second - idx_base) - 2
+                        assert(d_base_base >= 0)
+                        assert(d_base_idx >= 0)
+                        assert(d_base_base >= d_base_idx)
+
+                        k = d_base_idx / d_base_base
+
+                        #Catch edge cases where the weights ignore one of the two contributions
+                        if k == 1.0:
+                            exponent = exponent_closest
+                        
+                        elif k == 0.0:
+                            exponent = exponent_second
+                        
+                        else:
+                            exponent = torch.logsumexp(torch.tensor([exponent_closest + np.log(k),exponent_second + np.log(1-k)]),0)
+
+                        assert(exponent.shape == torch.Size([]))
+
+                    else:
+                        exponent = exponent_closest
+
+                else:
+                    exponent = exponent_closest
+                
+                causality_weights[i] = exponent
+
+            causality_weights = causality_weights.detach()
+
+            ###
+            assert(causality_weights.shape == self.multiplyer.squeeze().shape)
+            causality_weights = causality_weights * self.multiplyer.squeeze().to(causality_weights.device)
+
+            return causality_weights
+
+##############################################################################################
+# Grid-less TRADE
+##############################################################################################
+
+class Objective_PINF_local_Ground_Truth_one_param_V2():
+    def __init__(self,
+                 t_burn_in:int,
+                 t_full:int,
+                 param_min:float,
+                 param_max:float,
+                 S:Callable,
+                 S_kwargs:Dict,
+                 dSdparam:Callable,
+                 dSdparam_kwargs:Dict,
+                 n_samples_expectation_approx:int,
+                 n_samples_evaluation_per_param:int,
+                 n_evaluation_params:int,
+                 param_sampler_mode:str,
+                 include_base_params:bool,
+                 sample_param_params:Dict,
+                 base_params:torch.tensor,
+                 device:str,
+                 residual_processing_parameters:Dict,
+                 n_bins_storage:int = 100,
+                 **kwargs
+                 )->None:
+
+        """
+        parameters:
+            t_burn_in:                      The time step after which the burn in phase is finished
+            t_full:                         The time step after which the full range is reached
+            param_min:                      The minimal parameter value
+            param_max:                      The maximal parameter value
+            S:                              The ground truth function in the exponent of the Gibbs distribution
+            S_kwargs:                       Additional parameters for the ground truth energy function
+            dSdparam:                       The derivative of the ground truth function with respect to the parameter
+            dSdparam_kwargs:                Additional parameters for the derivative of the ground truth energy function
+            n_samples_expectation_approx:   Number of samples used to approximate the expectation value for each condition value
+            n_samples_evaluation_per_param: Number of evaluataion points per condition value.
+            n_evaluation_params:            Total number of evaluated condition values in each training step.
+            include_base_params:            If True, the loss is computed at the base parameters all the time, in addition to the randomly sampled parameters
+            sample_param_params:            Parameters for the sampling of the parameter at which the loss is computed
+            base_params:                    The base parameters at which the nll loss is computed
+            device:                         The device on which the computation is performed
+            residual_processing_parameters: Parametersto compute the loss from the residuals
+            param_sampler_mode:             Set the method used to sample condition values
+            n_bins_storage:                 Nimber of bins for storing the approximated expectation values (for visualization only)
+        """
+
+        print("*********************************************************************************************")
+        print("Use class 'Objective_PINF_local_Ground_Truth_one_param_V2'")
+        print("*********************************************************************************************")
+        
+        #Store settings
+        self.device = device
+        self.residual_processing_parameters = residual_processing_parameters
+        self.include_base_params = include_base_params
+        self.t_full = t_full
+        self.t_burn_in = t_burn_in
+
+        self.n_samples_expectation_approx = n_samples_expectation_approx
+        self.n_samples_evaluation_per_param = n_samples_evaluation_per_param
+        self.n_evaluation_params = n_evaluation_params
+        self.param_sampler_mode = param_sampler_mode
+
+        self.sample_param_params = sample_param_params
+        self.sample_param_params["t_full"] = self.t_full
+        self.sample_param_params["t_burn_in"] = self.t_burn_in
+
+        self.S = S
+        self.dSdparam = dSdparam
+        self.S_kwargs = S_kwargs
+        self.dSdparam_kwargs = dSdparam_kwargs
+
+        #Set the limits of the beta ranges for the individual base temperatures
+        global_min = torch.ones([len(base_params),1]) * param_min
+        global_max = torch.ones([len(base_params),1]) * param_max
+
+        selected_min = global_min
+        selected_max = global_max
+
+        self.params_mins = []
+        self.params_maxs = []
+        self.params_stars = []
+
+        #Check the consistency of the settings
+        for i in range(len(base_params)):
+            self.params_mins.append(selected_min[i].item())
+            self.params_maxs.append(selected_max[i].item())
+            self.params_stars.append(base_params[i].item())
+
+        #Store the approximated expectation vlues (only for later evaluation and visualization)
+
+        #Initialize the bins of the grid
+        self.param_bin_edges = torch.linspace(np.log(param_min),np.log(param_max),n_bins_storage+1).exp()
+        self.param_storage_grid = torch.zeros(n_bins_storage)
+        self.EX_storage_grid = torch.zeros(n_bins_storage)
+
+        #Counter for the number of calls of the loss function
+        self.iteration = 0
+
+        print("Initialize loss model of type <Objective_PINF_local_Ground_Truth_one_param>")
+
+    def get_loss(self,INN:INN_Model,param_batch:torch.Tensor,EX_batch:torch.tensor,get_eval_points:Callable)->torch.Tensor:
+
+        """
+        Perform the actual loss computation for a given inverse temperature.
+
+        parameters:
+            INN:                The INN model
+            param:              The parameter at which the loss is computed
+            get_eval_points:    Function to get evaluation points for the gradient evaluation. Takes arguments beta_tensor
+
+        returns:
+            loss:               The temperature scaling loss at the given inverse temperature
+            EX_A:               The approxiamted expectation value of the energy of the derivative of the ground truth energy function with respect to the parameter at the given parameter
+        """
+
+        #Check inputs
+        assert(len(param_batch.shape) == 1)
+        assert(EX_batch.shape == torch.Size([self.n_evaluation_params]))
+
+        #Get condition values
+        param_batch = param_batch.reshape(-1,1)
+        param_tensor = torch.ones([self.n_evaluation_params,self.n_samples_evaluation_per_param]) * param_batch
+        assert (param_tensor.shape == torch.Size([self.n_evaluation_params,self.n_samples_evaluation_per_param]))
+        param_tensor_flat = param_tensor.reshape(-1,1).to(self.device)
+
+        #Get expectation values
+        EX_batch = EX_batch.reshape(-1,1)
+        EX_tensor = torch.ones([self.n_evaluation_params,self.n_samples_evaluation_per_param]) * EX_batch
+        assert (EX_tensor.shape == torch.Size([self.n_evaluation_params,self.n_samples_evaluation_per_param]))
+        EX_tensor_flat = EX_tensor.reshape(-1).to(self.device)
+
+        #Get the target for the gradient
+        with torch.no_grad():
+            INN.train(False)
+
+            x_eval = get_eval_points(beta_tensor = param_tensor_flat)
+
+            #10) Compute the ground truth energies of the evaluation points
+            A_eval = self.dSdparam(x_eval,**self.dSdparam_kwargs)
+
+            assert(EX_tensor_flat.shape == A_eval.shape)
+
+            #11) Compute the target
+            target = EX_tensor_flat - A_eval
+            
+            INN.train(True)
+
+        #Compute the gradient of the log-likelihood with respect to the condition
+        param_tensor_flat.requires_grad_(True)
+
+        log_p_x_eval = INN.log_prob(x_eval,param_tensor_flat)
+
+        grad = torch.autograd.grad(log_p_x_eval.sum(),param_tensor_flat,create_graph=True)[0].squeeze()
+
+        #Compute the residuals
+        assert(grad.shape == target.shape)
+
+        residuals = grad - target.detach()
+        assert(residuals.shape == torch.Size([self.n_evaluation_params * self.n_samples_evaluation_per_param]))
+
+        #Copute the loss from the residuals
+        loss = get_loss_from_residuals(residuals,**self.residual_processing_parameters)
+
+        return loss
+
+    def __sample_param_batch(self)->torch.Tensor:
+        
+        #In case of burn in phase or alwys inclusion of the base parameters add them first
+        if (self.iteration <= self.t_burn_in) or self.include_base_params:
+
+            param_batch = torch.tensor(self.params_stars)
+            idx = torch.randperm(len(self.params_stars))
+            param_batch = param_batch[idx][:min(len(self.params_stars),self.n_evaluation_params)]
+
+        else:
+            param_batch = torch.zeros(0)
+
+        #If the max number of points is already reached return the batch of parameter values
+        if (self.iteration <= self.t_burn_in) or (len(param_batch) == self.n_evaluation_params):
+            return param_batch
+        
+        n_params_to_sample = int(self.n_evaluation_params - len(param_batch))
+        assert(n_params_to_sample > 0)
+
+        for i in range(n_params_to_sample):
+            
+            #Use linear uniform sampling in an increasing interval
+            if self.param_sampler_mode == "simple":
+                #Get a base temperature at random
+                idx = np.random.randint(low = 0,high = len(self.params_stars))
+                param_star_i = self.params_stars[idx]
+
+                param_i,left,right = get_beta(
+                        t = self.iteration,
+                        beta_star=param_star_i,
+                        beta_min=self.params_mins[idx],
+                        beta_max=self.params_maxs[idx],
+                        **self.sample_param_params
+                        )
+                
+                param_batch = torch.cat((torch.Tensor([param_i]),param_batch),0)
+            else:
+                raise NotImplementedError()
+
+        #print("param batch:     ", param_batch)
+        assert(param_batch.shape == torch.Size([self.n_evaluation_params]))
+
+        return param_batch
+
+    def get_expectation_values(self,param_batch:torch.Tensor,INN:INN_Model)->torch.Tensor:
+
+        assert(len(param_batch.shape) == 1)
+
+        #Get one large parameter tensor
+        param_batch = param_batch.reshape(-1,1)
+        param_tensor = torch.ones([self.n_evaluation_params,self.n_samples_expectation_approx]) * param_batch
+        assert (param_tensor.shape == torch.Size([self.n_evaluation_params,self.n_samples_expectation_approx]))
+        
+        param_tensor_flat = param_tensor.reshape(-1,1).to(self.device)
+        
+        #Approximate the expectation value for the given parameter
+        with torch.no_grad():
+            INN.train(False)
+
+            #1) Get samples from the INN
+            x_proposal = INN.sample(n_samples = len(param_tensor_flat),beta_tensor = param_tensor_flat)
+
+            #2) Compute the derivative of the ground truth energy function with respect to the parameter at the evaluation points
+            A_proposal = self.dSdparam(x_proposal,**self.dSdparam_kwargs).reshape([self.n_evaluation_params,self.n_samples_expectation_approx])
+
+            #3) Compute the log likelihood of the samples under the INN distribution and the ground truth distribution
+            log_p_x_proposal_INN    = INN.log_prob(x_proposal,param_tensor_flat)
+            log_p_x_proposal_GT     = - self.S(x_proposal,param_tensor_flat,**self.S_kwargs)
+
+            assert(log_p_x_proposal_INN.shape == log_p_x_proposal_GT.shape)
+
+            #4) compute the log likelihood ratios
+            log_w = log_p_x_proposal_GT - log_p_x_proposal_INN
+
+            #reshape 
+            log_w = log_w.reshape([self.n_evaluation_params,self.n_samples_expectation_approx])
+
+            #5) compute the log parition function
+            log_Z = torch.logsumexp(log_w,dim = 1,keepdim=True) - np.log(self.n_samples_expectation_approx)
+
+            assert(log_Z.shape == torch.Size([self.n_evaluation_params,1]))
+
+            #6) Compute the importance weights
+            log_omega = log_w - log_Z
+
+            assert(log_omega.shape == A_proposal.shape)
+
+            #7) Compute the sample based expectation value of the energy
+            EX_A = (A_proposal * log_omega.exp()).mean(-1)
+            
+            INN.train(True)
+
+        assert(EX_A.shape == torch.Size([self.n_evaluation_params]))
+
+        #print("EX_A:    ",EX_A)
+
+        return EX_A.detach().cpu()
+
+    def __call__(self,INN,epoch,get_eval_points,logger = None)->torch.Tensor:
+        """
+        Compute the TS-PINF loss
+
+        parameters:
+            INN:                The INN model
+            epoch:              The current epoch
+            get_eval_points:    Function to get evaluation points for the gradient evaluation. Takes arguments beta_tensor
+            logger:             The logger for the loss
+
+        returns:
+            loss:               The temperature scaling loss
+            
+        """
+
+        #Get a batch of parameters at which the loss is evluated
+        param_batch = self.__sample_param_batch()
+
+        #Get the expectation values for the given batch of parameters
+        EX_batch = self.get_expectation_values(param_batch=param_batch,INN = INN)
+
+        loss = self.get_loss(INN = INN,param_batch=param_batch,EX_batch = EX_batch,get_eval_points=get_eval_points)
+
+        logger.experiment.add_scalar(f"metadata/loss_model_internal_iteratoins",self.iteration,self.iteration)
+
+        #For evaluation only
+        #Store the approximated expectation values for the given parameter batch
+        bin_idx = torch.searchsorted(self.param_bin_edges, param_batch, right=False) - 1
+
+        #If some indices are there multiple times only store one
+        unique, idx, counts = torch.unique(bin_idx, dim=0, sorted=True, return_inverse=True, return_counts=True)
+        _, ind_sorted = torch.sort(idx, stable=True)
+        cum_sum = counts.cumsum(0)
+        cum_sum = torch.cat((torch.tensor([0]), cum_sum[:-1]))
+        first_indicies = ind_sorted[cum_sum]
+
+        unique_bin_indices = bin_idx[first_indicies]
+    
+        self.param_storage_grid[unique_bin_indices] = param_batch.squeeze()[first_indicies]
+        self.EX_storage_grid[unique_bin_indices] = EX_batch.squeeze()[first_indicies]
+
+        return loss
+    
+##############################################################################################
+# Reverse KL 
+##############################################################################################
+
+class Objective_reverse_KL():
+    def __init__(self,
+                 beta_min:float,
+                 beta_max:float,
+                 log_p_target:Callable,
+                 log_p_target_kwargs:Dict,
+                 device:str,
+                 bs:int,
+                 )->None:
+
+        """
+        parameters:
+            beta_min:                       The minimal inverse temperature
+            beta_max:                       The maximal inverse temperature
+            log_p_target                    Log likelihood of the (unnormalized) ground truth distribution
+            log_p_target_kwargs:            Additional arguments for the ground truth log likelihood
+            device:                         Name of the device on which the experiment runs
+            bs:                             Batch size
+        """
+    
+        self.beta_max = beta_max
+        self.beta_min = beta_min
+        self.log_p_target = log_p_target
+        self.log_p_target_kwargs = log_p_target_kwargs
+        self.bs = bs
+        self.device = device
+        self.iteration = 1
+
+        print("*********************************************************************************************")
+        print("Use class 'Objective_reverse_KL'")
+        print("*********************************************************************************************")
+
+    def __call__(self,INN,epoch,get_eval_points,logger = None)->torch.Tensor:
+        """
+        Compute the TS-PINF loss
+
+        parameters:
+            INN:                The INN model
+            epoch:              The current epoch
+            get_eval_points:    Function to get evaluation points for the gradient evaluation. Takes arguments beta_tensor
+            logger:             The logger for the loss
+
+        returns:
+            loss:               The temperature scaling loss
+        """
+
+        #Get evaluation points
+        #Get inverse temperatures uniformly from the log space
+        log_beta_tensor = (np.log(self.beta_max) - np.log(self.beta_min)) * torch.rand([self.bs,1]).to(self.device) + np.log(self.beta_min)
+        beta_tensor = log_beta_tensor.exp()
+
+        #Get INN samples
+        x = INN.sample(self.bs,beta_tensor = beta_tensor)
+
+        #Evaluate the samples on the ground truth log likelihood
+        log_p_target_x = self.log_p_target(x = x,beta_tensor = beta_tensor,device = self.device,**self.log_p_target_kwargs)
+
+        #Get the log likelihood under the INN model
+        log_p_theta_x = INN.log_prob(x,beta_tensor)
+
+        #filter out invalid values
+        mask_A = torch.isfinite(log_p_target_x)
+        mask_B = torch.isfinite(log_p_theta_x)
+
+        mask = mask_A * mask_B
+
+        #Get the ratios
+        r = log_p_theta_x[mask] - log_p_target_x[mask]
+        rev_KL = r.mean()
+
+        #log the ratio of valid samples
+        valid_r = mask.sum() / len(mask)
+
+        logger.experiment.add_scalar(f"metadata/valid_r",valid_r,self.iteration)
+        self.iteration += 1
+
+        return rev_KL

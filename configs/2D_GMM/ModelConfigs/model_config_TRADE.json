@@ -1,0 +1,15 @@
+{
+    "set_up_function_name":"set_up_sequence_INN_DoubleWell",
+    "process_beta_parameters": {
+        "mode": "log_beta"
+    },
+    "coupling_block_type":"RQSpline",
+    "activation_function_type":"SiLU",
+    "coupling_block_number_per_stage_fc":4,
+    "d_hidden_fc":32,
+    "use_act_norm":true,
+    "coupling_block_params":{
+    },
+    "latent_mode":"temperature_scaling",
+    "condition_inclusion_fc_layers":"concatenate"
+}

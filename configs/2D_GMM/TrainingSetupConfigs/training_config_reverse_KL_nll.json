@@ -1,0 +1,27 @@
+{
+    "lr":1e-4,
+    "lr_scheduler_config":{
+        "mode":"oneCycle"
+    },
+    "use_nll_loss":true,
+    "data_free_loss_mode":"reverse_KL",
+    "weight_decay":0.0,
+    "batch_size_nll":256,
+    "n_epochs":600,
+    "enable_checkpointing":true,
+    "log_p_target_name":"2D_GMM",
+    "loss_model_params":{
+        "beta_min":0.16238,
+        "beta_max":6.15848,
+        "bs":512
+    },
+    "optimizer_type":"Adam",
+    "random_seed":0,
+    "gradient_clip_val":2.0,
+    "regularization_data_free":1.0,
+    "alpha_adaptive_weighting":0.015,
+    "adaptive_weighting":true,
+    "regularization_data_free_start":0,
+    "regularization_data_free_full":600,
+    "fixed_relative_weighting":1.0
+}

@@ -1,0 +1,9 @@
+{
+    "data_set_name":"2D_GMM",
+    "init_data_set_params":{
+        "d":2,
+        "base_path":"./data/2D_GMM/",
+        "temperature_list":[1.0],
+        "n_samples":100000
+    }
+}

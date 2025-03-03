@@ -1,14 +1,14 @@
 import bgflow as bg
 from bgflow import BoltzmannGenerator
-from temperature_scaling.bgflow_wrapper.ic_scaler import ICScaler
+from trade.bgflow_wrapper.ic_scaler import ICScaler
 from bgflow import TORSIONS, BONDS, ANGLES
-from temperature_scaling.bgflow_wrapper.parsing import parse_architecture_layer_str
+from trade.bgflow_wrapper.parsing import parse_architecture_layer_str
 from bgmol import bond_constraints
 import numpy as np
 import torch
 import torch.nn.functional as F
 import bgmol
-from temperature_scaling.config import BGFlowHParams
+from trade.config import BGFlowHParams
 
 def create_generator(cfg: BGFlowHParams, energy_model, system) -> BoltzmannGenerator:
 

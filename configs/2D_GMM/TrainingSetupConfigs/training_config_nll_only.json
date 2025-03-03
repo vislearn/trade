@@ -1,0 +1,17 @@
+{
+    "lr":1e-4,
+    "lr_scheduler_config":{
+        "mode":"oneCycle"
+    },
+    "use_nll_loss":true,
+    "data_free_loss_mode":null,
+    "weight_decay":0.0,
+    "batch_size_nll":256,
+    "n_epochs":600,
+    "enable_checkpointing":true,
+    "log_p_target_name":"2D_GMM",
+    "loss_model_params":null,
+    "optimizer_type":"Adam",
+    "random_seed":0,
+    "gradient_clip_val":2.0
+}
