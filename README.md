@@ -50,16 +50,15 @@ python3 train_INN.py --tag <your experiment tag> --config_path ./configs/<data s
 ### Datasets
 You can download the toy datasets from google drive. Alanine dipeptide is downloaded on-demand.
 ```bash
-curl -L -o data.zip "https://drive.google.com/uc?export=download&id=1cPHvXGPR2MyzPQNeqF_Q77MV0kQeGkfY"
+curl -L -o data.zip "https://drive.google.com/uc?export=download&id=10u03uwwoPTN3qAXZh94gTa9JJ-v-H4pB"
 unzip data.zip
 ```
-Currently five datasets are implemented and can be used via specifying
 Double well 2d:  
 ```yaml
 dataset:
   name: double_well_2d
 ```
-Gaussian Mixture Model 2d:  
+Gaussian Mixture Model from [Flow Annealed Importance Sampling Bootstrap](https://arxiv.org/abs/2208.01893):  
 ```yaml
 dataset:
   name: gmm_2d
