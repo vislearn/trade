@@ -41,6 +41,12 @@ python3 -m lightning_trainable.launcher.fit configs/config.yaml
 ```
 You can also use multiple config files at once. Later configs overwrite the values specified in earlier ones.
 
+To run the experiments for the lattice model and the two-dimensional Gaussian mixture model, use 
+
+```bash
+python3 train_INN.py --tag <your experiment tag> --config_path ./configs/<data set name>/config_<experiment name>.json
+```
+
 ### Datasets
 You can download the toy datasets from google drive. Alanine dipeptide is downloaded on-demand.
 ```bash
