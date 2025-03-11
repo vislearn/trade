@@ -34,6 +34,15 @@ Fixes for broken packages:
   When trying to evaluate models trained with bgflow we therefore advise you to implement metrics and sampling functions yourself or directly using the BGFlowFlow class
 
 ### Usage
+Currently, the lattice model and Gaussian mixture model from Appendix C are run differently from the other datasets.
+To run the experiments for the lattice model and the two-dimensional Gaussian mixture model, use 
+
+```bash
+python3 train_INN.py --tag <your experiment tag> --config_path ./configs/<data set name>/config_<experiment name>.json
+```
+
+All other experiments can be called via [lightning trainable](https://github.com/LarsKue/lightning-trainable) as follows: 
+
 Define your configurations in a `config.yaml` file. You can find various default configs in the `configs` folder.
 Then start the experiment using lightning trainable:
 ```bash
@@ -41,24 +50,21 @@ python3 -m lightning_trainable.launcher.fit configs/config.yaml
 ```
 You can also use multiple config files at once. Later configs overwrite the values specified in earlier ones.
 
-To run the experiments for the lattice model and the two-dimensional Gaussian mixture model, use 
-
-```bash
-python3 train_INN.py --tag <your experiment tag> --config_path ./configs/<data set name>/config_<experiment name>.json
-```
 
 ### Datasets
-You can download the toy datasets from google drive. Alanine dipeptide is downloaded on-demand.
+You can download all datasets from google drive. Alanine dipeptide is downloaded on-demand.
 ```bash
 curl -L -o data.zip "https://drive.google.com/uc?export=download&id=10u03uwwoPTN3qAXZh94gTa9JJ-v-H4pB"
 unzip data.zip
 ```
+You can choose a dataset for training by including the following lines in your lightning trainable config.yaml
+
 Double well 2d:  
 ```yaml
 dataset:
   name: double_well_2d
 ```
-Gaussian Mixture Model from [Flow Annealed Importance Sampling Bootstrap](https://arxiv.org/abs/2208.01893):  
+Gaussian mixture model from [Flow Annealed Importance Sampling Bootstrap](https://arxiv.org/abs/2208.01893) (not Appendix C of our paper):  
 ```yaml
 dataset:
   name: gmm_2d
