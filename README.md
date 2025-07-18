@@ -89,10 +89,12 @@ dataset:
 
 You can cite our work using the following bibtex entry:
 ```
-@article{wahl2024trade,
+@inproceedings{wahl2025trade,
   title={TRADE: Transfer of Distributions between External Conditions with Normalizing Flows},
-  author={Wahl, Stefan and Rousselot, Armand and Draxler, Felix and K{\"o}the, Ullrich},
-  journal={arXiv preprint arXiv:2410.19492},
-  year={2024}
+  author={Wahl, Stefan and Rousselot, Armand and Draxler, Felix and Koethe, Ullrich},
+  booktitle={International Conference on Artificial Intelligence and Statistics},
+  pages={3196--3204},
+  year={2025},
+  organization={PMLR}
 }
 ```
